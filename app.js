@@ -77,6 +77,8 @@ const NAV = [
   { id:"dashboard", label:"Dashboard", icon:"ti-layout-dashboard" },
   { id:"branches", label:"Branches", icon:"ti-building-store" },
   { id:"inventory", label:"Inventory", icon:"ti-boxes" },
+  { id:"sales", label:"Sales", icon:"ti-receipt" },
+  { id:"purchases", label:"Purchases", icon:"ti-truck-delivery" },
   { id:"employees", label:"Employees", icon:"ti-users" },
   { id:"assistant", label:"AI assistant", icon:"ti-sparkles" },
 ];
@@ -149,6 +151,8 @@ function renderTopbar(){
     dashboard: ["Dashboard", "Overview across all branches"],
     branches: ["Branches", "Manage your pharmacy locations"],
     inventory: ["Inventory", "Stock levels, batches, and expiry"],
+    sales: ["Sales", "Record sales and track revenue"],
+    purchases: ["Purchases", "Record incoming stock from suppliers"],
     employees: ["Employees", "Staff across all branches"],
     assistant: ["AI assistant", "Ask about stock, staff, or branches in plain English"],
   };
@@ -157,6 +161,8 @@ function renderTopbar(){
   if(STATE.page === "inventory") actions = `<button class="btn btn-primary" id="addProductBtn"><i class="ti ti-plus"></i> Add product</button>`;
   if(STATE.page === "employees") actions = `<button class="btn btn-primary" id="addEmployeeBtn"><i class="ti ti-plus"></i> Add employee</button>`;
   if(STATE.page === "branches") actions = `<button class="btn btn-primary" id="addBranchBtn"><i class="ti ti-plus"></i> Add branch</button>`;
+  if(STATE.page === "sales") actions = `<button class="btn btn-primary" id="newSaleBtn"><i class="ti ti-plus"></i> New sale</button>`;
+  if(STATE.page === "purchases") actions = `<button class="btn btn-primary" id="newPurchaseBtn"><i class="ti ti-plus"></i> New purchase</button>`;
 
   return `
     <div class="topbar">
@@ -199,6 +205,8 @@ function renderPage(){
     case "dashboard": return renderDashboard();
     case "branches": return renderBranches();
     case "inventory": return renderInventory();
+    case "sales": return renderSales();
+    case "purchases": return renderPurchases();
     case "employees": return renderEmployees();
     case "assistant": return renderAssistant();
     default: return "";
@@ -210,6 +218,8 @@ function attachPageHandlers(){
     case "dashboard": attachDashboardHandlers(); break;
     case "branches": attachBranchHandlers(); break;
     case "inventory": attachInventoryHandlers(); break;
+    case "sales": attachSalesHandlers(); break;
+    case "purchases": attachPurchasesHandlers(); break;
     case "employees": attachEmployeeHandlers(); break;
     case "assistant": attachAssistantHandlers(); break;
   }
@@ -647,6 +657,225 @@ function openAddProductModal(){
   });
 }
 
+// ===================== SALES =====================
+function productSelectOptions(){
+  return DATA.products.map(p=>`<option value="${p.id}">${p.name} — Rs ${p.unitPrice}</option>`).join("");
+}
+
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short" }) + " " + d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+}
+
+function renderSales(){
+  const scopedSales = STATE.activeBranch === "all" ? DATA.sales : DATA.sales.filter(s=>s.branchId===STATE.activeBranch);
+  const totalRevenue = scopedSales.reduce((s,x)=> s + x.quantity*x.unitPrice, 0);
+  const todaySales = scopedSales.filter(s => new Date(s.createdAt).toDateString() === new Date().toDateString());
+  const todayRevenue = todaySales.reduce((s,x)=> s + x.quantity*x.unitPrice, 0);
+
+  const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown product";
+  const branchName = (id) => (DATA.branches.find(b=>b.id===id)||{}).name?.replace("MediCore — ","") || "—";
+
+  const rows = scopedSales.slice(0,50).map(s=>`
+    <tr>
+      <td class="mono">${fmtDateTime(s.createdAt)}</td>
+      <td><div class="tname">${productName(s.productId)}</div></td>
+      <td>${branchName(s.branchId)}</td>
+      <td class="mono">${s.quantity}</td>
+      <td class="mono">${fmtMoney(s.unitPrice)}</td>
+      <td class="mono" style="font-weight:500;">${fmtMoney(s.quantity*s.unitPrice)}</td>
+      <td>${s.customerName}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="metric-row" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-receipt"></i> Today's revenue</div>
+        <div class="metric-value">${fmtMoney(todayRevenue)}</div>
+        <div class="metric-delta up">${todaySales.length} sale${todaySales.length===1?'':'s'} today</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-chart-bar"></i> Total revenue logged</div>
+        <div class="metric-value">${fmtMoney(totalRevenue)}</div>
+        <div class="metric-delta up">${scopedSales.length} transactions</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-building-store"></i> Scope</div>
+        <div class="metric-value" style="font-size:16px;">${STATE.activeBranch==='all' ? 'All branches' : branchName(STATE.activeBranch)}</div>
+        <div class="metric-delta up">Switch in sidebar</div>
+      </div>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      ${scopedSales.length === 0 ? `<div class="empty-state"><i class="ti ti-shopping-cart-off"></i>No sales recorded yet — click "New sale" to log one</div>` : `
+      <table>
+        <thead><tr><th>Date</th><th>Product</th><th>Branch</th><th>Qty</th><th>Unit price</th><th>Total</th><th>Customer</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+
+function attachSalesHandlers(){
+  const btn = document.getElementById("newSaleBtn");
+  if(btn) btn.addEventListener("click", openNewSaleModal);
+}
+
+function openNewSaleModal(){
+  if(DATA.products.length === 0){ showToast("Add a product to inventory first", "ti-alert-circle"); return; }
+  const defaultBranch = STATE.activeBranch !== "all" ? STATE.activeBranch : DATA.branches[0].id;
+  openModal(`
+    <div class="modal-title">Record a sale</div>
+    <div class="field"><label>Branch</label><select id="f_branch">${branchSelectOptions(defaultBranch)}</select></div>
+    <div class="field"><label>Product</label><select id="f_product">${productSelectOptions()}</select></div>
+    <div class="field" id="stockHint" style="font-size:12px; color:var(--ink-soft); margin-top:-8px;"></div>
+    <div class="field"><label>Quantity</label><input id="f_qty" type="number" min="1" value="1"></div>
+    <div class="field"><label>Unit price (Rs)</label><input id="f_price" type="number" min="0" step="0.01"></div>
+    <div class="field"><label>Customer name (optional)</label><input id="f_customer" placeholder="Walk-in"></div>
+    <div id="saleError" style="display:none; background:var(--red-100); color:var(--red-700); font-size:12.5px; padding:9px 12px; border-radius:7px; margin-bottom:6px;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveSaleBtn">Record sale</button>
+    </div>
+  `);
+
+  const branchSel = document.getElementById("f_branch");
+  const prodSel = document.getElementById("f_product");
+  const priceInput = document.getElementById("f_price");
+  const hint = document.getElementById("stockHint");
+
+  function updateHint(){
+    const prod = DATA.products.find(p=>p.id===prodSel.value);
+    if(!prod) return;
+    const stock = prod.stock[branchSel.value] || 0;
+    hint.textContent = `${stock} unit${stock===1?'':'s'} in stock at this branch`;
+    hint.style.color = stock === 0 ? "var(--red-500)" : "var(--ink-soft)";
+    if(!priceInput.value) priceInput.value = prod.unitPrice;
+  }
+  branchSel.addEventListener("change", updateHint);
+  prodSel.addEventListener("change", ()=>{ priceInput.value = ""; updateHint(); });
+  updateHint();
+  priceInput.value = (DATA.products.find(p=>p.id===prodSel.value)||{}).unitPrice || "";
+
+  document.getElementById("saveSaleBtn").addEventListener("click", async ()=>{
+    const branchId = branchSel.value;
+    const productId = prodSel.value;
+    const quantity = parseInt(document.getElementById("f_qty").value, 10);
+    const unitPrice = parseFloat(priceInput.value) || 0;
+    const customerName = document.getElementById("f_customer").value.trim() || "Walk-in";
+    const errEl = document.getElementById("saleError");
+    errEl.style.display = "none";
+
+    if(!quantity || quantity <= 0){ errEl.textContent = "Enter a quantity greater than zero."; errEl.style.display="block"; return; }
+
+    const btn = document.getElementById("saveSaleBtn");
+    btn.disabled = true; btn.textContent = "Recording...";
+    try{
+      await dbRecordSale({ branchId, productId, quantity, unitPrice, customerName });
+      await fetchAllData();
+      closeModal();
+      showToast("Sale recorded — stock updated");
+      render();
+    }catch(err){
+      errEl.textContent = err.message || "Couldn't record this sale.";
+      errEl.style.display = "block";
+      btn.disabled = false; btn.textContent = "Record sale";
+    }
+  });
+}
+
+// ===================== PURCHASES =====================
+function renderPurchases(){
+  const scopedPurchases = STATE.activeBranch === "all" ? DATA.purchases : DATA.purchases.filter(p=>p.branchId===STATE.activeBranch);
+  const totalCost = scopedPurchases.reduce((s,x)=> s + x.quantity*x.unitCost, 0);
+
+  const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown product";
+  const branchName = (id) => (DATA.branches.find(b=>b.id===id)||{}).name?.replace("MediCore — ","") || "—";
+
+  const rows = scopedPurchases.slice(0,50).map(p=>`
+    <tr>
+      <td class="mono">${fmtDateTime(p.createdAt)}</td>
+      <td><div class="tname">${productName(p.productId)}</div></td>
+      <td>${branchName(p.branchId)}</td>
+      <td class="mono">${p.quantity}</td>
+      <td class="mono">${fmtMoney(p.unitCost)}</td>
+      <td class="mono" style="font-weight:500;">${fmtMoney(p.quantity*p.unitCost)}</td>
+      <td>${p.supplier}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="metric-row" style="grid-template-columns:repeat(2,1fr);">
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-truck-delivery"></i> Total purchase cost</div>
+        <div class="metric-value">${fmtMoney(totalCost)}</div>
+        <div class="metric-delta up">${scopedPurchases.length} purchase${scopedPurchases.length===1?'':'s'} logged</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-building-store"></i> Scope</div>
+        <div class="metric-value" style="font-size:16px;">${STATE.activeBranch==='all' ? 'All branches' : branchName(STATE.activeBranch)}</div>
+        <div class="metric-delta up">Switch in sidebar</div>
+      </div>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      ${scopedPurchases.length === 0 ? `<div class="empty-state"><i class="ti ti-truck"></i>No purchases recorded yet — click "New purchase" to log stock coming in</div>` : `
+      <table>
+        <thead><tr><th>Date</th><th>Product</th><th>Branch</th><th>Qty</th><th>Unit cost</th><th>Total</th><th>Supplier</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+
+function attachPurchasesHandlers(){
+  const btn = document.getElementById("newPurchaseBtn");
+  if(btn) btn.addEventListener("click", openNewPurchaseModal);
+}
+
+function openNewPurchaseModal(){
+  if(DATA.products.length === 0){ showToast("Add a product to inventory first", "ti-alert-circle"); return; }
+  const defaultBranch = STATE.activeBranch !== "all" ? STATE.activeBranch : DATA.branches[0].id;
+  openModal(`
+    <div class="modal-title">Record a purchase</div>
+    <div class="field"><label>Branch receiving stock</label><select id="f_branch">${branchSelectOptions(defaultBranch)}</select></div>
+    <div class="field"><label>Product</label><select id="f_product">${productSelectOptions()}</select></div>
+    <div class="field"><label>Quantity received</label><input id="f_qty" type="number" min="1" value="1"></div>
+    <div class="field"><label>Unit cost (Rs)</label><input id="f_cost" type="number" min="0" step="0.01"></div>
+    <div class="field"><label>Supplier</label><input id="f_supplier" placeholder="e.g. Getz Pharma distributor"></div>
+    <div id="purchaseError" style="display:none; background:var(--red-100); color:var(--red-700); font-size:12.5px; padding:9px 12px; border-radius:7px; margin-bottom:6px;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="savePurchaseBtn">Record purchase</button>
+    </div>
+  `);
+
+  document.getElementById("savePurchaseBtn").addEventListener("click", async ()=>{
+    const branchId = document.getElementById("f_branch").value;
+    const productId = document.getElementById("f_product").value;
+    const quantity = parseInt(document.getElementById("f_qty").value, 10);
+    const unitCost = parseFloat(document.getElementById("f_cost").value) || 0;
+    const supplier = document.getElementById("f_supplier").value.trim() || "—";
+    const errEl = document.getElementById("purchaseError");
+    errEl.style.display = "none";
+
+    if(!quantity || quantity <= 0){ errEl.textContent = "Enter a quantity greater than zero."; errEl.style.display="block"; return; }
+
+    const btn = document.getElementById("savePurchaseBtn");
+    btn.disabled = true; btn.textContent = "Recording...";
+    try{
+      await dbRecordPurchase({ branchId, productId, quantity, unitCost, supplier });
+      await fetchAllData();
+      closeModal();
+      showToast("Purchase recorded — stock updated");
+      render();
+    }catch(err){
+      errEl.textContent = err.message || "Couldn't record this purchase.";
+      errEl.style.display = "block";
+      btn.disabled = false; btn.textContent = "Record purchase";
+    }
+  });
+}
+
 // ===================== EMPLOYEES =====================
 function renderEmployees(){
   let emps = DATA.employees.slice();
@@ -795,8 +1024,8 @@ function openEditEmployeeModal(empId){
 const AI_SUGGESTIONS = [
   "Which branch is low on Augmentin?",
   "Show items expiring in the next 60 days",
-  "Compare staff count across branches",
-  "What's our total inventory value?",
+  "What's our total revenue?",
+  "What are our top selling products?",
   "Which products are out of stock?",
   "Who manages the DHA Phase 5 branch?"
 ];
@@ -920,6 +1149,29 @@ function answerQuery(raw){
       return `<tr><td>${b.name.replace("MediCore — ","")}</td><td class="mono">${fmtMoney(v)}</td></tr>`;
     }).join("");
     return `Total inventory value across all branches is <b>${fmtMoney(total)}</b>.` + miniTable(["Branch","Value"], rows);
+  }
+
+  // revenue / sales
+  if(q.includes("revenue") || q.includes("sales") || q.includes("sold") || q.includes("selling")){
+    if(DATA.sales.length === 0) return "No sales have been recorded yet. Use the Sales page to log your first one.";
+    const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown";
+    const totals = {};
+    DATA.sales.forEach(s=>{
+      totals[s.productId] = (totals[s.productId]||0) + s.quantity;
+    });
+    const ranked = Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const totalRevenue = DATA.sales.reduce((s,x)=> s + x.quantity*x.unitPrice, 0);
+    const rows = ranked.map(([pid,qty])=>`<tr><td>${productName(pid)}</td><td class="mono">${qty} sold</td></tr>`).join("");
+    return `Total revenue logged so far is <b>${fmtMoney(totalRevenue)}</b> across ${DATA.sales.length} sales. Top sellers by quantity:` + miniTable(["Product","Units sold"], rows);
+  }
+
+  // purchases / restocking history
+  if(q.includes("purchase") || q.includes("supplier") || q.includes("received")){
+    if(DATA.purchases.length === 0) return "No purchases have been recorded yet. Use the Purchases page to log stock coming in from suppliers.";
+    const totalCost = DATA.purchases.reduce((s,x)=> s + x.quantity*x.unitCost, 0);
+    const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown";
+    const recent = DATA.purchases.slice(0,5).map(p=>`<tr><td>${productName(p.productId)}</td><td class="mono">${p.quantity}</td><td>${p.supplier}</td></tr>`).join("");
+    return `Total spent on purchases is <b>${fmtMoney(totalCost)}</b> across ${DATA.purchases.length} orders. Most recent:` + miniTable(["Product","Qty","Supplier"], recent);
   }
 
   // staff comparison
