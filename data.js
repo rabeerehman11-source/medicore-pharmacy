@@ -86,7 +86,6 @@ async function dbAddProduct({ name, category, batch, expiry, unitPrice, reorderL
     .insert({ name, category, batch, expiry, unit_price: unitPrice, reorder_level: reorderLevel })
     .select().single();
   if(error) throw error;
-  // seed a zero stock row for every existing branch
   const rows = DATA.branches.map(b => ({ product_id: data.id, branch_id: b.id, quantity: 0 }));
   if(rows.length){
     const { error: stockErr } = await supabaseClient.from("stock_levels").insert(rows);
@@ -139,12 +138,10 @@ async function dbRecordSale({ branchId, productId, quantity, unitPrice, customer
 }
 
 // ---------- one-time seed of demo data for a brand new pharmacy ----------
-// Only runs if the database is completely empty, so a fresh Supabase
-// project still demos well on first login.
 async function seedDemoDataIfEmpty(){
   const { count, error } = await supabaseClient.from("branches").select("*", { count: "exact", head: true });
   if(error) throw error;
-  if(count && count > 0) return; // already has real data, don't touch it
+  if(count && count > 0) return;
 
   const branchSeed = [
     { name: "MediCore — Gulberg", city: "Lahore", manager: "Hassan Raza", phone: "+92 42 3587 2210" },
