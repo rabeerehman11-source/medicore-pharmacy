@@ -1,159 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediCore Premium — Pharmacy ERP</title>
-    
-    <!-- Premium Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet">
-    
-    <!-- Modern Styling (Tailwind + Custom Premium CSS) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/dist/tabler-icons.min.css">
-    
-    <style>
-        :root {
-            --primary: #0F172A;
-            --accent: #10B981;
-        }
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: #F8FAFC; 
-            color: #0F172A;
-        }
-        .serif { font-family: 'Source Serif 4', serif; }
-        
-        /* Premium Bento Card Overrides */
-        .metric-card, .card, .branch-card, .pos-card {
-            background: white !important;
-            border: 1px solid #E2E8F0 !important;
-            border-radius: 24px !important;
-            padding: 24px !important;
-            transition: all 0.3s ease !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
-        }
-        .metric-card:hover, .branch-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05) !important;
-            border-color: #10B981 !important;
-        }
-        
-        /* Premium Navigation */
-        .nav-item.active {
-            background: rgba(16, 185, 129, 0.1) !important;
-            color: #065F46 !important;
-            font-weight: 600;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediCore — Pharmacy ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@600&display=swap" rel="stylesheet">
 
-        /* Modern Table Overrides */
-        table { border-collapse: separate !important; border-spacing: 0 8px !important; }
-        tbody tr { background: white !important; transition: all 0.2s; }
-        tbody tr td:first-child { border-top-left-radius: 16px; border-bottom-left-radius: 16px; }
-        tbody tr td:last-child { border-top-right-radius: 16px; border-bottom-right-radius: 16px; }
-        tbody tr:hover { transform: scale(1.01); box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+<style>
+/* --- THE $10,000 DESIGN SYSTEM --- */
+:root {
+  /* High-End Palette (Slate & Emerald) */
+  --teal-900: #0f172a;    /* Deep Navy Sidebar */
+  --teal-800: #1e293b;    /* Sidebar Hover */
+  --teal-700: #10b981;    /* Primary Accent (Emerald) */
+  --teal-600: #059669; 
+  --teal-100: #f1f5f9;
+  --teal-50: #f8fafc;
+  
+  --amber-500: #10b981;   /* Replaced amber with emerald for modern look */
+  --amber-100: #dcfce7;
+  
+  --paper: #f8fafc;       /* Soft background */
+  --white: #ffffff;
+  --ink: #0f172a;         /* High contrast text */
+  --ink-soft: #64748b;    /* Subtext */
+  --line: #e2e8f0;        /* Subtle borders */
+  
+  --font-sans: 'Inter', sans-serif;
+  --font-serif: 'Source Serif 4', serif;
+  
+  /* The Secret Sauce: Large Radii & Soft Shadows */
+  --radius: 24px;
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+}
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
-    </style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { display: flex; min-height: 100vh; }
+
+/* --- SIDEBAR UPGRADE --- */
+.sidebar {
+  width: 260px; background: var(--teal-900); color: #fff;
+  display: flex; flex-direction: column; position: sticky; top: 0; h-screen;
+  border-right: 1px solid rgba(255,255,255,0.05);
+}
+.brand { padding: 32px 24px; border: none; }
+.brand-mark {
+  background: var(--teal-700) !important; color: white !important;
+  width: 40px; height: 40px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2);
+}
+.brand-name { font-family: var(--font-serif); font-size: 22px; }
+
+.nav-item {
+  margin: 4px 12px; padding: 12px 16px; border-radius: 14px;
+  transition: all 0.2s ease; opacity: 0.7;
+}
+.nav-item:hover { background: rgba(255,255,255,0.05); opacity: 1; transform: translateX(4px); }
+.nav-item.active { background: var(--teal-700) !important; color: white !important; opacity: 1; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.2); }
+
+/* --- MAIN CONTENT UPGRADE --- */
+.topbar {
+  padding: 24px 40px; background: rgba(248, 250, 252, 0.8);
+  backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
+}
+.page-title { font-family: var(--font-serif); font-size: 32px; letter-spacing: -0.5px; }
+
+.btn {
+  border-radius: 12px; padding: 10px 20px; font-weight: 600;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.btn-primary { background: var(--teal-700); border: none; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39); }
+.btn-primary:hover { background: var(--teal-600); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(16, 185, 129, 0.23); }
+
+/* --- THE "BENTO" CARDS --- */
+.metric-card, .card, .branch-card {
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 24px;
+  box-shadow: var(--shadow); transition: all 0.3s ease;
+}
+.metric-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: var(--teal-700); }
+.metric-value { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
+
+/* --- PREMIUM TABLES --- */
+table { border-spacing: 0 8px; border-collapse: separate; }
+thead th { padding: 12px; font-weight: 700; color: var(--ink-soft); text-transform: none; letter-spacing: 0; }
+tbody tr { background: white; border-radius: 16px; transition: transform 0.2s; }
+tbody td { 
+    padding: 16px; border: none; 
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); 
+}
+tbody td:first-child { border-left: 1px solid var(--line); border-top-left-radius: 16px; border-bottom-left-radius: 16px; }
+tbody td:last-child { border-right: 1px solid var(--line); border-top-right-radius: 16px; border-bottom-right-radius: 16px; }
+tbody tr:hover { transform: scale(1.01); background: #fff; box-shadow: var(--shadow); }
+
+/* --- POS & MODALS --- */
+.pos-card { border-radius: 20px; border: 1px solid var(--line); transition: all 0.2s; }
+.pos-card:hover { border-color: var(--teal-700); background: var(--teal-50); }
+.modal { border-radius: 32px; padding: 40px; box-shadow: var(--shadow-lg); }
+
+/* Hide messy scrollbars */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+</style>
 </head>
-<body class="antialiased">
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
 
-    <div class="flex min-h-screen">
-        
-        <!-- Premium Sidebar -->
-        <aside class="w-64 bg-[#0F172A] text-slate-300 hidden md:flex flex-col sticky top-0 h-screen z-50">
-            <div class="p-8">
-                <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-900/20">
-                        <span class="text-white font-bold text-xl serif">M</span>
-                    </div>
-                    <div>
-                        <h1 class="text-white font-bold text-xl tracking-tight serif">MediCore</h1>
-                        <p class="text-[10px] uppercase tracking-[2px] opacity-50 font-bold">Intelligence</p>
-                    </div>
-                </div>
-            </div>
-            
-            <nav class="flex-1 px-4 space-y-1 overflow-y-auto" id="sidebarNav">
-                <!-- Navigation items will be injected by app.js, but styled by our CSS -->
-            </nav>
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
 
-            <div class="p-6 border-t border-slate-800">
-                <div class="bg-slate-800/50 rounded-2xl p-4">
-                    <p class="text-xs font-medium text-slate-500 mb-1">System Status</p>
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                        <span class="text-xs text-white">All Systems Live</span>
-                    </div>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="flex-1 flex flex-col min-w-0">
-            
-            <!-- Floating Glass Header -->
-            <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4">
-                <div class="flex justify-between items-center max-w-7xl mx-auto">
-                    <div>
-                        <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest" id="breadcrumb">Dashboard</h2>
-                    </div>
-                    
-                    <div class="flex items-center gap-4">
-                        <button class="p-2 hover:bg-slate-100 rounded-full transition-colors relative">
-                            <i class="ti ti-bell text-xl"></i>
-                            <span class="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
-                        </button>
-                        <div class="h-8 w-[1px] bg-slate-200 mx-2"></div>
-                        <div class="flex items-center gap-3 bg-slate-100 p-1.5 pr-4 rounded-full">
-                            <div class="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs font-bold">AD</div>
-                            <span class="text-sm font-semibold">Admin</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- THE MAIN MOUNTING POINT -->
-            <!-- Your app.js will inject everything into this div -->
-            <div id="app" class="p-8 lg:p-12 max-w-7xl mx-auto w-full">
-                <!-- This will display your Loading State or initial page -->
-                <div class="flex items-center justify-center h-64">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
-                </div>
-            </div>
-
-        </main>
-    </div>
-
-    <!-- UI Components -->
-    <div class="toast" id="toast"></div>
-    <div class="modal-overlay" id="modalOverlay">
-        <div class="modal" id="modalContent"></div>
-    </div>
-
-    <!-- YOUR ORIGINAL LOGIC - DO NOT REMOVE -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="config.js"></script>
-    <script src="data.js"></script>
-    <script src="app.js"></script>
-
-    <!-- Script to move Tabler navigation into the new Sidebar -->
-    <script>
-        // Because app.js might look for elements, we ensure they exist.
-        // This script runs a small check to ensure the UI stays updated.
-        const observer = new MutationObserver(() => {
-            const sidebar = document.querySelector('.nav'); // Old sidebar class
-            const newSidebar = document.getElementById('sidebarNav');
-            if (sidebar && newSidebar && sidebar.parentElement !== newSidebar) {
-                newSidebar.appendChild(sidebar);
-            }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    </script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/dist/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
