@@ -82,6 +82,8 @@ const NAV = [
   { id:"purchases", label:"Purchases", icon:"ti-truck-delivery" },
   { id:"transfers", label:"Stock transfers", icon:"ti-arrows-exchange" },
   { id:"suppliers", label:"Suppliers", icon:"ti-truck" },
+  { id:"profit", label:"Profit & expenses", icon:"ti-chart-pie" },
+  { id:"attendance", label:"Attendance", icon:"ti-clock-check" },
   { id:"employees", label:"Employees", icon:"ti-users" },
   { id:"assistant", label:"AI assistant", icon:"ti-sparkles" },
 ];
@@ -159,6 +161,8 @@ function renderTopbar(){
     purchases: ["Purchases", "Record incoming stock from suppliers"],
     transfers: ["Stock transfers", "Move stock between branches"],
     suppliers: ["Suppliers", "Vendors you order stock from"],
+    profit: ["Profit & expenses", "Track costs and see real net profit per branch"],
+    attendance: ["Attendance", "Check-in times and leave records"],
     employees: ["Employees", "Staff across all branches"],
     assistant: ["AI assistant", "Ask about stock, staff, or branches in plain English"],
   };
@@ -171,6 +175,8 @@ function renderTopbar(){
   if(STATE.page === "purchases") actions = `<button class="btn btn-primary" id="newPurchaseBtn"><i class="ti ti-plus"></i> New purchase</button>`;
   if(STATE.page === "transfers") actions = `<button class="btn btn-primary" id="newTransferBtn"><i class="ti ti-plus"></i> New transfer</button>`;
   if(STATE.page === "suppliers") actions = `<button class="btn btn-primary" id="addSupplierBtn"><i class="ti ti-plus"></i> Add supplier</button>`;
+  if(STATE.page === "profit") actions = `<button class="btn btn-primary" id="addExpenseBtn"><i class="ti ti-plus"></i> Add expense</button>`;
+  if(STATE.page === "attendance") actions = `<button class="btn btn-primary" id="checkInOutBtn"><i class="ti ti-clock-check"></i> Check in / out</button>`;
 
   return `
     <div class="topbar">
@@ -218,6 +224,8 @@ function renderPage(){
     case "purchases": return renderPurchases();
     case "transfers": return renderTransfers();
     case "suppliers": return renderSuppliers();
+    case "profit": return renderProfit();
+    case "attendance": return renderAttendance();
     case "employees": return renderEmployees();
     case "assistant": return renderAssistant();
     default: return "";
@@ -234,6 +242,8 @@ function attachPageHandlers(){
     case "purchases": attachPurchasesHandlers(); break;
     case "transfers": attachTransfersHandlers(); break;
     case "suppliers": attachSuppliersHandlers(); break;
+    case "profit": attachProfitHandlers(); break;
+    case "attendance": attachAttendanceHandlers(); break;
     case "employees": attachEmployeeHandlers(); break;
     case "assistant": attachAssistantHandlers(); break;
   }
@@ -1394,6 +1404,378 @@ function openAddSupplierModal(){
   });
 }
 
+// ===================== PROFIT & EXPENSES =====================
+
+// One-off expenses for a branch within the current month, plus any active
+// recurring expenses for that branch (rent, electricity, etc.), which are
+// counted once per month regardless of when in the month they were set up.
+function monthlyExpensesForBranch(branchId, monthDate){
+  const isSameMonth = (iso) => { const d = new Date(iso); return d.getMonth()===monthDate.getMonth() && d.getFullYear()===monthDate.getFullYear(); };
+  const oneOff = DATA.expenses.filter(e => e.branchId === branchId && isSameMonth(e.expenseDate)).reduce((s,e)=>s+e.amount,0);
+  const recurring = DATA.recurringExpenses.filter(r => r.branchId === branchId && r.active).reduce((s,r)=>s+r.amount,0);
+  return { oneOff, recurring, total: oneOff + recurring };
+}
+
+function branchRevenueForMonth(branchId, monthDate){
+  const isSameMonth = (iso) => { const d = new Date(iso); return d.getMonth()===monthDate.getMonth() && d.getFullYear()===monthDate.getFullYear(); };
+  return DATA.sales.filter(s=>s.branchId===branchId && isSameMonth(s.createdAt)).reduce((s,x)=>s+x.quantity*x.unitPrice,0);
+}
+
+function renderProfit(){
+  const now = new Date("2026-06-21");
+  const branches = DATA.branches;
+
+  const rows = branches.map(b=>{
+    const revenue = branchRevenueForMonth(b.id, now);
+    const exp = monthlyExpensesForBranch(b.id, now);
+    const profit = revenue - exp.total;
+    return { branch: b, revenue, exp, profit };
+  });
+
+  const totalRevenue = rows.reduce((s,r)=>s+r.revenue,0);
+  const totalExpenses = rows.reduce((s,r)=>s+r.exp.total,0);
+  const totalProfit = totalRevenue - totalExpenses;
+  const maxAbsProfit = Math.max(1, ...rows.map(r=>Math.abs(r.profit)));
+
+  const recentExpenseRows = DATA.expenses.slice(0,30).map(e=>{
+    const b = DATA.branches.find(x=>x.id===e.branchId);
+    return `
+      <tr>
+        <td class="mono">${e.expenseDate}</td>
+        <td>${b ? b.name.replace("MediCore — ","") : "—"}</td>
+        <td><span class="tag tag-low">${e.category}</span></td>
+        <td>${e.description || "—"}</td>
+        <td class="mono" style="text-align:right;">${fmtMoney(e.amount)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const recurringRows = branches.map(b=>{
+    const recs = DATA.recurringExpenses.filter(r=>r.branchId===b.id);
+    if(recs.length === 0) return "";
+    return recs.map(r=>`
+      <tr>
+        <td>${b.name.replace("MediCore — ","")}</td>
+        <td><span class="tag tag-ok">${r.category}</span></td>
+        <td class="mono" style="text-align:right;">${fmtMoney(r.amount)}/mo</td>
+        <td style="text-align:right;"><button class="btn btn-sm" data-remove-recurring="${r.id}"><i class="ti ti-x"></i></button></td>
+      </tr>
+    `).join("");
+  }).join("");
+
+  return `
+    <div class="metric-row" style="grid-template-columns:repeat(3,1fr);">
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-trending-up"></i> Revenue this month</div>
+        <div class="metric-value">${fmtMoney(totalRevenue)}</div>
+        <div class="metric-delta up">Across all branches</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-trending-down"></i> Expenses this month</div>
+        <div class="metric-value" style="color:var(--amber-600);">${fmtMoney(totalExpenses)}</div>
+        <div class="metric-delta down">Rent, bills, petty cash &amp; more</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label"><i class="ti ti-chart-pie"></i> Net profit this month</div>
+        <div class="metric-value" style="color:${totalProfit>=0?'var(--teal-700)':'var(--red-500)'};">${fmtMoney(totalProfit)}</div>
+        <div class="metric-delta ${totalProfit>=0?'up':'down'}">Revenue minus all expenses</div>
+      </div>
+    </div>
+
+    <div class="section-head"><div class="section-title">Profit by branch — this month</div></div>
+    <div class="card" style="margin-bottom:var(--sp-6);">
+      ${rows.map(r=>`
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+            <div>
+              <span style="font-weight:600; font-size:13.5px;">${r.branch.name.replace("MediCore — ","")}</span>
+              <span style="font-size:12px; color:var(--ink-soft); margin-left:8px;">Revenue ${fmtMoney(r.revenue)} &middot; Expenses ${fmtMoney(r.exp.total)}</span>
+            </div>
+            <span class="mono" style="font-weight:700; font-size:14px; color:${r.profit>=0?'var(--teal-700)':'var(--red-500)'};">${fmtMoney(r.profit)}</span>
+          </div>
+          <div style="height:10px; background:var(--paper-dim); border-radius:5px; overflow:hidden; position:relative;">
+            <div style="height:100%; width:${Math.min(100, Math.abs(r.profit)/maxAbsProfit*100).toFixed(1)}%; background:${r.profit>=0?'var(--teal-600)':'var(--red-500)'}; border-radius:5px;"></div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:var(--sp-5);">
+      <div>
+        <div class="section-head"><div class="section-title">Recent expenses</div></div>
+        <div class="card" style="padding:0; overflow:hidden;">
+          ${DATA.expenses.length === 0 ? `<div class="empty-state"><i class="ti ti-receipt"></i>No expenses logged yet</div>` : `
+          <table>
+            <thead><tr><th>Date</th><th>Branch</th><th>Category</th><th>Note</th><th style="text-align:right;">Amount</th></tr></thead>
+            <tbody>${recentExpenseRows}</tbody>
+          </table>`}
+        </div>
+      </div>
+      <div>
+        <div class="section-head">
+          <div class="section-title">Recurring monthly costs</div>
+          <div class="section-link" id="addRecurringLink">+ Add recurring</div>
+        </div>
+        <div class="card" style="padding:0; overflow:hidden;">
+          ${DATA.recurringExpenses.length === 0 ? `<div class="empty-state"><i class="ti ti-calendar-stats"></i>No recurring costs set up yet</div>` : `
+          <table>
+            <thead><tr><th>Branch</th><th>Category</th><th style="text-align:right;">Amount</th><th></th></tr></thead>
+            <tbody>${recurringRows}</tbody>
+          </table>`}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function attachProfitHandlers(){
+  const btn = document.getElementById("addExpenseBtn");
+  if(btn) btn.addEventListener("click", openAddExpenseModal);
+  const recLink = document.getElementById("addRecurringLink");
+  if(recLink) recLink.addEventListener("click", openAddRecurringModal);
+  document.querySelectorAll("[data-remove-recurring]").forEach(el=>{
+    el.addEventListener("click", async ()=>{
+      try{
+        await dbDeleteRecurringExpense(el.dataset.removeRecurring);
+        await fetchAllData();
+        showToast("Recurring cost removed");
+        render();
+      }catch(err){
+        showToast(err.message || "Couldn't remove this", "ti-alert-circle");
+      }
+    });
+  });
+}
+
+const EXPENSE_CATEGORIES = ["Rent","Electricity","Water","Petty Cash","Maintenance","Salaries","Internet/Phone","Transport","Other"];
+
+function openAddExpenseModal(){
+  if(DATA.branches.length === 0){ showToast("Add a branch first", "ti-alert-circle"); return; }
+  openModal(`
+    <div class="modal-title">Add an expense</div>
+    <div class="field"><label>Branch</label><select id="f_branch">${branchSelectOptions(STATE.activeBranch!=='all'?STATE.activeBranch:DATA.branches[0].id)}</select></div>
+    <div class="field"><label>Category</label><select id="f_category">${EXPENSE_CATEGORIES.map(c=>`<option>${c}</option>`).join("")}</select></div>
+    <div class="field"><label>Amount (Rs)</label><input id="f_amount" type="number" min="0" step="0.01" placeholder="e.g. 45000"></div>
+    <div class="field"><label>Date</label><input id="f_date" type="date" value="2026-06-21"></div>
+    <div class="field"><label>Note (optional)</label><input id="f_desc" placeholder="e.g. AC repair"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveExpenseBtn">Add expense</button>
+    </div>
+  `);
+  document.getElementById("saveExpenseBtn").addEventListener("click", async ()=>{
+    const branchId = document.getElementById("f_branch").value;
+    const category = document.getElementById("f_category").value;
+    const amount = parseFloat(document.getElementById("f_amount").value) || 0;
+    const expenseDate = document.getElementById("f_date").value || "2026-06-21";
+    const description = document.getElementById("f_desc").value.trim();
+    if(amount <= 0){ showToast("Enter an amount greater than zero", "ti-alert-circle"); return; }
+    const btn = document.getElementById("saveExpenseBtn");
+    btn.disabled = true; btn.textContent = "Saving...";
+    try{
+      await dbAddExpense({ branchId, category, description, amount, expenseDate });
+      await fetchAllData();
+      closeModal();
+      showToast("Expense added");
+      render();
+    }catch(err){
+      showToast(err.message || "Couldn't add expense", "ti-alert-circle");
+      btn.disabled = false; btn.textContent = "Add expense";
+    }
+  });
+}
+
+function openAddRecurringModal(){
+  if(DATA.branches.length === 0){ showToast("Add a branch first", "ti-alert-circle"); return; }
+  openModal(`
+    <div class="modal-title">Add a recurring monthly cost</div>
+    <div class="field"><label>Branch</label><select id="f_branch">${branchSelectOptions(STATE.activeBranch!=='all'?STATE.activeBranch:DATA.branches[0].id)}</select></div>
+    <div class="field"><label>Category</label><select id="f_category">${EXPENSE_CATEGORIES.slice(0,7).map(c=>`<option>${c}</option>`).join("")}</select></div>
+    <div class="field"><label>Amount per month (Rs)</label><input id="f_amount" type="number" min="0" step="0.01" placeholder="e.g. 80000"></div>
+    <div style="font-size:12px; color:var(--ink-soft); margin-top:-8px; margin-bottom:14px;">This will be counted automatically every month — you won't need to re-enter it.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveRecurringBtn">Add recurring cost</button>
+    </div>
+  `);
+  document.getElementById("saveRecurringBtn").addEventListener("click", async ()=>{
+    const branchId = document.getElementById("f_branch").value;
+    const category = document.getElementById("f_category").value;
+    const amount = parseFloat(document.getElementById("f_amount").value) || 0;
+    if(amount <= 0){ showToast("Enter an amount greater than zero", "ti-alert-circle"); return; }
+    const btn = document.getElementById("saveRecurringBtn");
+    btn.disabled = true; btn.textContent = "Saving...";
+    try{
+      await dbSetRecurringExpense({ branchId, category, amount, active: true });
+      await fetchAllData();
+      closeModal();
+      showToast("Recurring cost added");
+      render();
+    }catch(err){
+      showToast(err.message || "Couldn't add this", "ti-alert-circle");
+      btn.disabled = false; btn.textContent = "Add recurring cost";
+    }
+  });
+}
+
+// ===================== ATTENDANCE =====================
+
+function activeAttendanceFor(employeeId){
+  return DATA.attendance.find(a => a.employeeId === employeeId && !a.checkOut && a.status === "present");
+}
+
+function renderAttendance(){
+  const emps = STATE.activeBranch === "all" ? DATA.employees : DATA.employees.filter(e=>e.branch===STATE.activeBranch);
+  const branchName = (id) => (DATA.branches.find(b=>b.id===id)||{}).name?.replace("MediCore — ","") || "—";
+
+  const today = new Date("2026-06-21").toDateString();
+  const todaysRecords = DATA.attendance.filter(a => new Date(a.checkIn).toDateString() === today);
+
+  const statusRows = emps.map(e=>{
+    const open = activeAttendanceFor(e.id);
+    const todays = todaysRecords.filter(a=>a.employeeId===e.id);
+    const lastToday = todays[0];
+    let statusTag, timeInfo;
+    if(open){
+      statusTag = `<span class="tag tag-ok">Checked in</span>`;
+      timeInfo = `Since ${new Date(open.checkIn).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'})}`;
+    }else if(lastToday && lastToday.status === "absent"){
+      statusTag = `<span class="tag tag-out">Absent today</span>`;
+      timeInfo = "—";
+    }else if(lastToday && lastToday.status === "leave"){
+      statusTag = `<span class="tag tag-low">On leave</span>`;
+      timeInfo = "—";
+    }else if(lastToday && lastToday.checkOut){
+      statusTag = `<span class="tag tag-low">Checked out</span>`;
+      timeInfo = `${new Date(lastToday.checkIn).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'})} – ${new Date(lastToday.checkOut).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'})}`;
+    }else{
+      statusTag = `<span class="tag" style="background:var(--paper-dim); color:var(--ink-soft);">Not marked</span>`;
+      timeInfo = "—";
+    }
+    return `
+      <tr>
+        <td><div class="person-cell"><div class="avatar">${initials(e.name)}</div><div><div class="tname">${e.name}</div><div class="tsub">${e.role}</div></div></div></td>
+        <td>${branchName(e.branch)}</td>
+        <td>${statusTag}</td>
+        <td class="mono">${timeInfo}</td>
+        <td style="text-align:right;">
+          <button class="btn btn-sm" data-attendance-history="${e.id}">History</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <div class="card" style="padding:0; overflow:hidden;">
+      ${emps.length === 0 ? `<div class="empty-state"><i class="ti ti-clock-check"></i>No employees to track yet</div>` : `
+      <table>
+        <thead><tr><th>Employee</th><th>Branch</th><th>Today's status</th><th>Time</th><th></th></tr></thead>
+        <tbody>${statusRows}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+
+function attachAttendanceHandlers(){
+  const btn = document.getElementById("checkInOutBtn");
+  if(btn) btn.addEventListener("click", openCheckInOutModal);
+  document.querySelectorAll("[data-attendance-history]").forEach(el=>{
+    el.addEventListener("click", ()=> openAttendanceHistoryModal(el.dataset.attendanceHistory));
+  });
+}
+
+function openCheckInOutModal(){
+  const emps = STATE.activeBranch === "all" ? DATA.employees : DATA.employees.filter(e=>e.branch===STATE.activeBranch);
+  if(emps.length === 0){ showToast("Add an employee first", "ti-alert-circle"); return; }
+
+  openModal(`
+    <div class="modal-title">Who are you?</div>
+    <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:16px;">Select your name to check in or out.</div>
+    <div style="display:flex; flex-direction:column; gap:6px; max-height:320px; overflow-y:auto;">
+      ${emps.map(e=>{
+        const open = activeAttendanceFor(e.id);
+        return `
+          <div style="display:flex; align-items:center; justify-content:between; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); cursor:pointer;" data-pick-employee="${e.id}">
+            <div class="avatar">${initials(e.name)}</div>
+            <div style="flex:1;">
+              <div class="tname">${e.name}</div>
+              <div class="tsub">${e.role}</div>
+            </div>
+            <span class="tag ${open?'tag-ok':'tag-low'}">${open?'Checked in':'Checked out'}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button></div>
+  `);
+
+  document.querySelectorAll("[data-pick-employee]").forEach(el=>{
+    el.addEventListener("click", async ()=>{
+      const employeeId = el.dataset.pickEmployee;
+      const emp = DATA.employees.find(e=>e.id===employeeId);
+      const open = activeAttendanceFor(employeeId);
+      try{
+        if(open){
+          await dbCheckOut({ employeeId });
+          showToast(`${emp.name} checked out`);
+        }else{
+          await dbCheckIn({ employeeId, branchId: emp.branch });
+          showToast(`${emp.name} checked in`);
+        }
+        await fetchAllData();
+        closeModal();
+        render();
+      }catch(err){
+        showToast(err.message || "Couldn't update attendance", "ti-alert-circle");
+      }
+    });
+  });
+}
+
+function openAttendanceHistoryModal(employeeId){
+  const emp = DATA.employees.find(e=>e.id===employeeId);
+  const records = DATA.attendance.filter(a=>a.employeeId===employeeId).slice(0,20);
+  const rows = records.map(a=>{
+    const date = new Date(a.checkIn).toLocaleDateString("en-GB",{day:'2-digit',month:'short'});
+    const inTime = new Date(a.checkIn).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'});
+    const outTime = a.checkOut ? new Date(a.checkOut).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'}) : "—";
+    const statusLabel = a.status === "present" ? "Present" : a.status === "absent" ? "Absent" : "Leave";
+    return `<tr><td class="mono">${date}</td><td>${statusLabel}</td><td class="mono">${a.status==='present'?inTime:'—'}</td><td class="mono">${a.status==='present'?outTime:'—'}</td></tr>`;
+  }).join("");
+
+  openModal(`
+    <div class="modal-title">${emp.name} — attendance history</div>
+    <div class="card" style="padding:0; overflow:hidden; max-height:340px; overflow-y:auto; margin-bottom:16px;">
+      ${records.length === 0 ? `<div class="empty-state"><i class="ti ti-clock-check"></i>No attendance records yet</div>` : `
+      <table>
+        <thead><tr><th>Date</th><th>Status</th><th>In</th><th>Out</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`}
+    </div>
+    <div class="field"><label>Mark absence or leave for today</label>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" data-mark-absence="${employeeId}" data-status="absent">Mark absent</button>
+        <button class="btn btn-sm" data-mark-absence="${employeeId}" data-status="leave">Mark on leave</button>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div>
+  `);
+
+  document.querySelectorAll("[data-mark-absence]").forEach(el=>{
+    el.addEventListener("click", async ()=>{
+      try{
+        await dbRecordAbsence({ employeeId, branchId: emp.branch, status: el.dataset.status, date: "2026-06-21" });
+        await fetchAllData();
+        closeModal();
+        showToast(`${emp.name} marked as ${el.dataset.status}`);
+        render();
+      }catch(err){
+        showToast(err.message || "Couldn't save this", "ti-alert-circle");
+      }
+    });
+  });
+}
+
 // ===================== EMPLOYEES =====================
 function renderEmployees(){
   let emps = DATA.employees.slice();
@@ -1541,11 +1923,11 @@ function openEditEmployeeModal(empId){
 // ===================== AI ASSISTANT =====================
 const AI_SUGGESTIONS = [
   "Which branch is low on Augmentin?",
-  "Show items expiring in the next 60 days",
-  "What's our total revenue?",
+  "What's our profit this month?",
+  "Who's checked in today?",
   "What are our top selling products?",
-  "Which products are out of stock?",
-  "Who manages the DHA Phase 5 branch?"
+  "Show items expiring in the next 60 days",
+  "What are our expenses this month?"
 ];
 
 // Chat history lives only for the current session (not saved to the database) —
@@ -1610,13 +1992,58 @@ function escapeHtml(s){
 }
 
 // Rule-based query engine over real app data — no external API needed.
-function answerQuery(raw){
-  const q = raw.toLowerCase();
-  const branchByName = (name) => DATA.branches.find(b => b.name.toLowerCase().includes(name) || name.includes(b.city.toLowerCase()));
-  const findProduct = () => DATA.products.find(p => q.includes(p.name.toLowerCase().split(" ")[0].toLowerCase()));
+// Improves on simple substring checks: strips punctuation, ignores common
+// filler words, and lets a query match if it shares enough significant words
+// with an intent's synonym set — so phrasing variations succeed, not just
+// exact keyword hits.
+const STOP_WORDS = new Set(["the","a","an","is","are","was","were","do","does","did","of","for","to","in","on","at","with","and","or","my","our","i","we","you","please","tell","show","me","what","whats","which","who","how","can","could","would","there","any","right","now","today"]);
 
-  // out of stock
-  if(q.includes("out of stock") || q.includes("zero stock")){
+function tokenize(text){
+  return text.toLowerCase().replace(/[?.,!]/g,"").split(/\s+/).filter(w=>w && !STOP_WORDS.has(w));
+}
+
+function matchesIntent(tokens, synonymGroups){
+  // synonymGroups is an array of arrays — query must contain at least one
+  // word from EACH group to count as a match (so "low stock branch" needs
+  // a stock-word AND doesn't need a branch-word if branch group is optional).
+  return synonymGroups.every(group => group.some(syn => tokens.some(t => t.includes(syn) || syn.includes(t))));
+}
+
+function anyWord(tokens, words){
+  return words.some(w => tokens.some(t => t.includes(w) || w.includes(t)));
+}
+
+function answerQuery(raw){
+  const q = raw.toLowerCase().replace(/[?.,!]/g,"");
+  const tokens = tokenize(raw);
+
+  // Fuzzy product lookup: matches against ANY significant word in the
+  // product name (not just the first), so "625mg", "augmentin", or
+  // "antibiotic for infection" style phrasing all have a chance to hit.
+  const findProduct = () => {
+    let best = null, bestScore = 0;
+    DATA.products.forEach(p=>{
+      const nameWords = p.name.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/);
+      let score = 0;
+      nameWords.forEach(nw=>{
+        if(nw.length < 3) return;
+        if(q.includes(nw)) score += nw.length; // longer matches count more
+      });
+      if(score > bestScore){ bestScore = score; best = p; }
+    });
+    return bestScore > 0 ? best : null;
+  };
+
+  const findBranch = () => {
+    return DATA.branches.find(b=>{
+      const city = b.city.toLowerCase();
+      const shortName = b.name.toLowerCase().split("—")[1]?.trim() || "";
+      return q.includes(city) || (shortName && q.includes(shortName.split(" ")[0]));
+    });
+  };
+
+  // ---------- out of stock ----------
+  if(matchesIntent(tokens, [["out","zero","empty","finished","ran"]]) && anyWord(tokens,["stock","supply"])){
     const out = [];
     DATA.products.forEach(p=>{
       DATA.branches.forEach(b=>{
@@ -1628,8 +2055,8 @@ function answerQuery(raw){
     return `${out.length} item${out.length>1?'s are':' is'} out of stock right now:` + miniTable(["Product","Branch"], rows);
   }
 
-  // low stock / which branch low on X
-  if(q.includes("low") || q.includes("restock") || q.includes("reorder")){
+  // ---------- low stock / restock / reorder ----------
+  if(anyWord(tokens,["low","short","running","restock","reorder","need","short-on","shortage"])){
     const prod = findProduct();
     if(prod){
       const rows = DATA.branches.map(b=>{
@@ -1649,8 +2076,8 @@ function answerQuery(raw){
     return `${lowItems.length} product${lowItems.length>1?'s':''} need attention${STATE.activeBranch!=='all'?' at this branch':' across branches'}:` + miniTable(["Product","Stock","Status"], rows);
   }
 
-  // expiring
-  if(q.includes("expir")){
+  // ---------- expiring ----------
+  if(anyWord(tokens,["expir","expire","expiring","expired"]) || q.includes("expir")){
     const days = q.match(/(\d+)\s*day/);
     const limit = days ? parseInt(days[1],10) : 120;
     const items = DATA.products.map(p=>({...p, d: daysUntil(p.expiry)})).filter(p=>p.d <= limit).sort((a,b)=>a.d-b.d);
@@ -1659,8 +2086,50 @@ function answerQuery(raw){
     return `${items.length} product${items.length>1?'s':''} expiring within ${limit} days:` + miniTable(["Product","Batch","Time left"], rows);
   }
 
-  // inventory value
-  if(q.includes("value") || q.includes("worth")){
+  // ---------- profit / expenses ----------
+  if(anyWord(tokens,["profit","margin","earning","earnings","net"]) && !anyWord(tokens,["staff","employee"])){
+    const now = new Date("2026-06-21");
+    const rows = DATA.branches.map(b=>{
+      const revenue = branchRevenueForMonth(b.id, now);
+      const exp = monthlyExpensesForBranch(b.id, now);
+      const profit = revenue - exp.total;
+      return `<tr><td>${b.name.replace("MediCore — ","")}</td><td class="mono">${fmtMoney(revenue)}</td><td class="mono">${fmtMoney(exp.total)}</td><td class="mono" style="font-weight:600; color:${profit>=0?'inherit':'#E11D48'}">${fmtMoney(profit)}</td></tr>`;
+    }).join("");
+    const totalProfit = DATA.branches.reduce((s,b)=>{
+      const now2 = new Date("2026-06-21");
+      return s + branchRevenueForMonth(b.id, now2) - monthlyExpensesForBranch(b.id, now2).total;
+    },0);
+    return `This month's net profit across all branches is <b>${fmtMoney(totalProfit)}</b> (revenue minus rent, bills, and other expenses).` + miniTable(["Branch","Revenue","Expenses","Profit"], rows);
+  }
+
+  if(anyWord(tokens,["expense","expenses","cost","costs","spending","spent","rent","electricity","bill","bills"])){
+    const now = new Date("2026-06-21");
+    const rows = DATA.branches.map(b=>{
+      const exp = monthlyExpensesForBranch(b.id, now);
+      return `<tr><td>${b.name.replace("MediCore — ","")}</td><td class="mono">${fmtMoney(exp.recurring)}</td><td class="mono">${fmtMoney(exp.oneOff)}</td><td class="mono" style="font-weight:600;">${fmtMoney(exp.total)}</td></tr>`;
+    }).join("");
+    return `Expenses this month by branch (recurring costs like rent/electricity, plus one-off costs like petty cash):` + miniTable(["Branch","Recurring","One-off","Total"], rows);
+  }
+
+  // ---------- attendance ----------
+  if(anyWord(tokens,["attendance","checked","absent","leave","late","present"]) || (anyWord(tokens,["who"]) && anyWord(tokens,["work","working","came","in"]))){
+    const today = new Date("2026-06-21").toDateString();
+    const todays = DATA.attendance.filter(a=>new Date(a.checkIn).toDateString()===today);
+    const empName = (id)=> (DATA.employees.find(e=>e.id===id)||{}).name || "Unknown";
+    if(anyWord(tokens,["absent"])){
+      const absent = todays.filter(a=>a.status==="absent");
+      if(absent.length===0) return "No one has been marked absent today.";
+      const rows = absent.map(a=>`<tr><td>${empName(a.employeeId)}</td></tr>`).join("");
+      return `${absent.length} employee${absent.length>1?'s':''} marked absent today:` + miniTable(["Employee"], rows);
+    }
+    const checkedIn = todays.filter(a=>a.status==="present" && !a.checkOut);
+    if(checkedIn.length===0) return "No one is currently checked in.";
+    const rows = checkedIn.map(a=>`<tr><td>${empName(a.employeeId)}</td><td class="mono">${new Date(a.checkIn).toLocaleTimeString("en-GB",{hour:'2-digit',minute:'2-digit'})}</td></tr>`).join("");
+    return `${checkedIn.length} employee${checkedIn.length>1?'s are':' is'} currently checked in:` + miniTable(["Employee","Since"], rows);
+  }
+
+  // ---------- inventory value ----------
+  if(anyWord(tokens,["value","worth","valuation"])){
     const total = DATA.products.reduce((s,p)=> s + totalStock(p)*p.unitPrice, 0);
     const rows = DATA.branches.map(b=>{
       const v = DATA.products.reduce((s,p)=> s + (p.stock[b.id]||0)*p.unitPrice, 0);
@@ -1669,9 +2138,9 @@ function answerQuery(raw){
     return `Total inventory value across all branches is <b>${fmtMoney(total)}</b>.` + miniTable(["Branch","Value"], rows);
   }
 
-  // revenue / sales
-  if(q.includes("revenue") || q.includes("sales") || q.includes("sold") || q.includes("selling")){
-    if(DATA.sales.length === 0) return "No sales have been recorded yet. Use the Sales page to log your first one.";
+  // ---------- revenue / sales / best sellers ----------
+  if(anyWord(tokens,["revenue","sales","sold","selling","seller","sellers","bestseller","income"])){
+    if(DATA.sales.length === 0) return "No sales have been recorded yet. Use the Sales page or Point of Sale to log your first one.";
     const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown";
     const totals = {};
     DATA.sales.forEach(s=>{
@@ -1683,8 +2152,8 @@ function answerQuery(raw){
     return `Total revenue logged so far is <b>${fmtMoney(totalRevenue)}</b> across ${DATA.sales.length} sales. Top sellers by quantity:` + miniTable(["Product","Units sold"], rows);
   }
 
-  // purchases / restocking history
-  if(q.includes("purchase") || q.includes("supplier") || q.includes("received")){
+  // ---------- purchases / suppliers ----------
+  if(anyWord(tokens,["purchase","purchases","supplier","suppliers","received","ordered","vendor","vendors"])){
     if(DATA.purchases.length === 0) return "No purchases have been recorded yet. Use the Purchases page to log stock coming in from suppliers.";
     const totalCost = DATA.purchases.reduce((s,x)=> s + x.quantity*x.unitCost, 0);
     const productName = (id) => (DATA.products.find(p=>p.id===id)||{}).name || "Unknown";
@@ -1692,8 +2161,8 @@ function answerQuery(raw){
     return `Total spent on purchases is <b>${fmtMoney(totalCost)}</b> across ${DATA.purchases.length} orders. Most recent:` + miniTable(["Product","Qty","Supplier"], recent);
   }
 
-  // staff comparison
-  if((q.includes("staff") || q.includes("employee")) && (q.includes("compare") || q.includes("across") || q.includes("how many") || q.includes("count"))){
+  // ---------- staff comparison ----------
+  if(anyWord(tokens,["staff","employee","employees","headcount","workers"]) && anyWord(tokens,["compare","across","many","count","total","number"])){
     const rows = DATA.branches.map(b=>{
       const c = DATA.employees.filter(e=>e.branch===b.id);
       const active = c.filter(e=>e.status==="Active").length;
@@ -1702,22 +2171,22 @@ function answerQuery(raw){
     return `Staff breakdown by branch:` + miniTable(["Branch","Total","Active"], rows);
   }
 
-  // who manages X branch
-  if(q.includes("manage") || q.includes("manager")){
-    const b = DATA.branches.find(b => q.includes(b.city.toLowerCase()) || b.name.toLowerCase().split("—")[1] && q.includes(b.name.toLowerCase().split("—")[1].trim().split(" ")[0]));
+  // ---------- who manages X branch ----------
+  if(anyWord(tokens,["manage","manager","manages","incharge","charge"])){
+    const b = findBranch();
     if(b) return `<b>${b.manager}</b> manages ${b.name}. Reach them at ${b.phone}.`;
     const rows = DATA.branches.map(b=>`<tr><td>${b.name.replace("MediCore — ","")}</td><td>${b.manager}</td></tr>`).join("");
     return `Branch managers:` + miniTable(["Branch","Manager"], rows);
   }
 
-  // specific product stock lookup
+  // ---------- specific product stock lookup (fallback) ----------
   const prod = findProduct();
   if(prod){
     const rows = DATA.branches.map(b=>`<tr><td>${b.name.replace("MediCore — ","")}</td><td class="mono">${prod.stock[b.id]||0}</td></tr>`).join("");
     return `${prod.name} (batch ${prod.batch}, expires ${prod.expiry}) — stock by branch:` + miniTable(["Branch","Stock"], rows);
   }
 
-  return `I can answer questions about stock levels, expiry dates, staff, and branches — try asking things like "which branch is low on Panadol" or "show expiring items". For anything outside the app's data, you'd want a more general AI integration, which we can wire in during the build-out phase.`;
+  return `I can answer questions about stock, sales, expenses, profit, and attendance — try asking things like "which branch is low on Panadol", "what's our profit this month", or "who's checked in today". For anything outside the app's data, you'd want a more general AI integration, which we can wire in during the build-out phase.`;
 }
 
 function miniTable(headers, rows){
