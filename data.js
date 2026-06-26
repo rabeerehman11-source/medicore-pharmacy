@@ -4,10 +4,10 @@
 // In-memory cache the rest of the app reads from after loading.
 // Shape matches the old localStorage version so the UI code barely changes:
 // { branches: [...], products: [...with .stock = {branchId: qty}}], employees: [...] }
-let DATA = { branches: [], products: [], employees: [], sales: [], purchases: [], suppliers: [], transfers: [] };
+let DATA = { branches: [], products: [], employees: [], sales: [], purchases: [], suppliers: [], transfers: [], expenses: [], recurringExpenses: [], attendance: [] };
 
 async function fetchAllData(){
-  const [branchesRes, productsRes, stockRes, employeesRes, salesRes, purchasesRes, suppliersRes, transfersRes] = await Promise.all([
+  const [branchesRes, productsRes, stockRes, employeesRes, salesRes, purchasesRes, suppliersRes, transfersRes, expensesRes, recurringRes, attendanceRes] = await Promise.all([
     supabaseClient.from("branches").select("*").order("created_at"),
     supabaseClient.from("products").select("*").order("created_at"),
     supabaseClient.from("stock_levels").select("*"),
@@ -16,6 +16,9 @@ async function fetchAllData(){
     supabaseClient.from("purchases").select("*").order("created_at", { ascending: false }).limit(300),
     supabaseClient.from("suppliers").select("*").order("created_at"),
     supabaseClient.from("stock_transfers").select("*").order("created_at", { ascending: false }).limit(100),
+    supabaseClient.from("expenses").select("*").order("expense_date", { ascending: false }).limit(300),
+    supabaseClient.from("recurring_expenses").select("*"),
+    supabaseClient.from("attendance").select("*").order("check_in", { ascending: false }).limit(500),
   ]);
 
   if(branchesRes.error) throw branchesRes.error;
@@ -26,6 +29,9 @@ async function fetchAllData(){
   if(purchasesRes.error) throw purchasesRes.error;
   if(suppliersRes.error) throw suppliersRes.error;
   if(transfersRes.error) throw transfersRes.error;
+  if(expensesRes.error) throw expensesRes.error;
+  if(recurringRes.error) throw recurringRes.error;
+  if(attendanceRes.error) throw attendanceRes.error;
 
   const branches = (branchesRes.data || []).map(b => ({
     id: b.id, name: b.name, city: b.city, manager: b.manager || "Unassigned",
@@ -75,7 +81,21 @@ async function fetchAllData(){
     quantity: t.quantity, status: t.status || "completed", createdAt: t.created_at
   }));
 
-  DATA = { branches, products, employees, sales, purchases, suppliers, transfers };
+  const expenses = (expensesRes.data || []).map(e => ({
+    id: e.id, branchId: e.branch_id, category: e.category, description: e.description || "",
+    amount: Number(e.amount) || 0, expenseDate: e.expense_date, createdAt: e.created_at
+  }));
+
+  const recurringExpenses = (recurringRes.data || []).map(r => ({
+    id: r.id, branchId: r.branch_id, category: r.category, amount: Number(r.amount) || 0, active: r.active
+  }));
+
+  const attendance = (attendanceRes.data || []).map(a => ({
+    id: a.id, employeeId: a.employee_id, branchId: a.branch_id,
+    checkIn: a.check_in, checkOut: a.check_out, status: a.status || "present"
+  }));
+
+  DATA = { branches, products, employees, sales, purchases, suppliers, transfers, expenses, recurringExpenses, attendance };
   return DATA;
 }
 
@@ -173,6 +193,56 @@ async function dbRecordTransfer({ productId, fromBranchId, toBranchId, quantity 
 async function dbAddSupplier({ name, contactPerson, phone, email }){
   const { data, error } = await supabaseClient.from("suppliers")
     .insert({ name, contact_person: contactPerson, phone, email }).select().single();
+  if(error) throw error;
+  return data;
+}
+
+// ---------- expenses & profit ----------
+
+async function dbAddExpense({ branchId, category, description, amount, expenseDate }){
+  const { data, error } = await supabaseClient.from("expenses")
+    .insert({ branch_id: branchId, category, description, amount, expense_date: expenseDate })
+    .select().single();
+  if(error) throw error;
+  return data;
+}
+
+// Recurring expenses are one row per branch+category — setting it again updates the amount.
+async function dbSetRecurringExpense({ branchId, category, amount, active }){
+  const { data, error } = await supabaseClient.from("recurring_expenses")
+    .upsert({ branch_id: branchId, category, amount, active: active !== false }, { onConflict: "branch_id,category" })
+    .select().single();
+  if(error) throw error;
+  return data;
+}
+
+async function dbDeleteRecurringExpense(id){
+  const { error } = await supabaseClient.from("recurring_expenses").delete().eq("id", id);
+  if(error) throw error;
+}
+
+// ---------- attendance ----------
+
+async function dbCheckIn({ employeeId, branchId }){
+  const { data, error } = await supabaseClient.rpc("employee_check_in", {
+    p_employee_id: employeeId, p_branch_id: branchId
+  });
+  if(error) throw error;
+  return data;
+}
+
+async function dbCheckOut({ employeeId }){
+  const { data, error } = await supabaseClient.rpc("employee_check_out", {
+    p_employee_id: employeeId
+  });
+  if(error) throw error;
+  return data;
+}
+
+async function dbRecordAbsence({ employeeId, branchId, status, date }){
+  const { data, error } = await supabaseClient.rpc("record_absence", {
+    p_employee_id: employeeId, p_branch_id: branchId, p_status: status, p_date: date
+  });
   if(error) throw error;
   return data;
 }
